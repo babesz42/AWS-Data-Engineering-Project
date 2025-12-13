@@ -68,11 +68,11 @@ This project establishes a robust "MVP" (Minimum Viable Product) using a Data La
 ## 1. Speed Layer: Integrating DynamoDB
 Our current S3 approach is cost-effective but has higher latency (reading a file takes milliseconds to seconds). For a real-time trading dashboard or app, we need sub-millisecond responses if we want to save ourselves.
 
-The Upgrade: Instead of just saving JSON files to S3, the Lambdas would write "Hot Data" (latest state) to a DynamoDB Table.
+**The Upgrade**: Instead of just saving JSON files to S3, the Lambdas would write "Hot Data" (latest state) to a DynamoDB Table.
 
-Why? DynamoDB is a NoSQL Key-Value store designed for extreme speed and scale.
+**Why?** DynamoDB is a NoSQL Key-Value store designed for extreme speed and scale.
 
-Benefit: A frontend application could query GetItem(Symbol="SPY") and receive the current sentiment in single-digit milliseconds, enabling a live, ticking dashboard and super fast notifications.
+**Benefit**: A frontend application could query GetItem(Symbol="SPY") and receive the current sentiment in single-digit milliseconds, enabling a live, ticking dashboard and super fast notifications.
 
 ## 2. Analytics Layer: AWS Redshift (Hardcore Analysis)
 S3 is excellent for storage, but it is slow for "heavy math" (e.g., querying 10 years of data to find hidden patterns, applying more complex models). AWS Redshift is a Data Warehouse built for running complex SQL analytics on massive datasets.
