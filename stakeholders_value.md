@@ -63,7 +63,7 @@ Alex receives an email on his phone:
 **Result**: Alex sees the notification on his phone during his meeting, quickly opens his trading app, and sells his position before the price crashes further. The system saved him from a major loss.
 
 # Scalability and further possibilites
-This project establishes a robust "MVP" (Minimum Viable Product) using a Data Lake architecture (S3). However, to scale for high-frequency trading (HFT) or petabyte-scale data analysis, the architecture can evolve by reintegrating database solutions like DynamoDB and Redshift.
+This project establishes a robust "MVP" (Minimum Viable Product) using a Data Lake architecture (S3). However, to scale for high-frequency trading (HFT) or petabyte-scale data analysis, the architecture can evolve by integrating database solutions like DynamoDB and Redshift.
 
 ## 1. Speed Layer: Integrating DynamoDB
 Our current S3 approach is cost-effective but has higher latency (reading a file takes milliseconds to seconds). For a real-time trading dashboard or app, we need sub-millisecond responses if we want to save ourselves.
