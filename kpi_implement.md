@@ -6,16 +6,16 @@ Document the execution, including the code used and an interpretation of the res
 I have defined three core metrics to evaluate the system's performance and business value:
 
 ### 1.  **Directional Accuracy (%)**
-    * **Definition:** The percentage of days where the morning prediction ("Buy" or "Sell") matched the actual market movement at close.
-    * **Goal:** $> 60\%$. This measures if the "Strategist" (Daily Lambda) provides a statistical edge over random guessing.
+**Definition:** The percentage of days where the morning prediction ("Buy" or "Sell") matched the actual market movement at close.
+**Goal:** $> 60\%$. This measures if the "Strategist" (Daily Lambda) provides a statistical edge over random guessing.
 
 ### 2.  **Sentiment Reaction Latency**
-    * **Definition:** The time difference between a news article's publication timestamp and the SNS alert delivery.
-    * **Goal:** $< 5$ minutes. This ensures the "Guardian" (Hourly Lambda) alerts me fast enough to react to breaking news before the market fully prices it in.
+**Definition:** The time difference between a news article's publication timestamp and the SNS alert delivery.
+**Goal:** $< 5$ minutes. This ensures the "Guardian" (Hourly Lambda) alerts me fast enough to react to breaking news before the market fully prices it in.
 
 ### 3.  **Operational Cost**
-    * **Definition:** Total monthly spend on AWS resources (Lambda compute time + S3 storage + SNS messages).
-    * **Goal:** $\$0.00$. By optimizing the code to run in milliseconds and scheduling sleep times, the project must remain entirely within the AWS Free Tier.
+**Definition:** Total monthly spend on AWS resources (Lambda compute time + S3 storage + SNS messages).
+**Goal:** $\$0.00$. By optimizing the code to run in milliseconds and scheduling sleep times, the project must remain entirely within the AWS Free Tier.
 
 ## Implementation & Code Execution
 The execution is fully automated via **Amazon EventBridge**. I do not run the code manually; it is triggered by Cron schedules that pass a standard JSON event to the functions.
