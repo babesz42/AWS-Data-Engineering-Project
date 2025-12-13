@@ -8,6 +8,7 @@ I have defined three core metrics to evaluate the system's performance and busin
 ### 1.  **Directional Accuracy (%)**
 
 **Definition:** The percentage of days where the morning prediction ("Buy" or "Sell") matched the actual market movement at close.
+
 **Goal:** > 60%. This measures if the "Strategist" (Daily Lambda) provides a statistical edge over random guessing.
 
 ### 2.  **Sentiment Reaction Latency**
@@ -25,10 +26,12 @@ The execution is fully automated via **Amazon EventBridge**. I do not run the co
 
 ### 1. Daily Market Prep (The Strategist)
 **Execution:**
+
 Runs at 12:00 UTC (Pre-market). It fetches 100 days of history, calculates technical indicators (RSI, MACD, Bollinger Bands) using standard Python math libraries (removing Pandas for performance), and saves the decision to S3.
 
 **Code Used (Key Logic):**
-```python
+```
+python
 # Zero-dependency implementation of Technical Indicators
 def calculate_rsi(prices, period=14):
     if len(prices) < period + 1: return 50.0
@@ -51,3 +54,55 @@ def calculate_rsi(prices, period=14):
 if total_score >= 2: suggestion = "Strong Buy"
 elif total_score == -1: suggestion = "Sell"
 # ... saves to S3/daily_trend/prediction.json
+```
+# 2. Hourly Sentiment Watcher (The Guardian)
+
+**Execution**:
+
+Runs hourly (14:00-21:00 UTC). It retrieves the NEWS_SENTIMENT feed, filters for articles published in the last 60 minutes, and checks for high-impact sentiment scores (> 0.35 or < -0.35).
+
+# Filtering for "Fresh" News
+
+```
+now = datetime.utcnow()
+one_hour_ago = now - timedelta(hours=1)
+
+for article in feed:
+    pub_time = datetime.strptime(article.get('time_published'), '%Y%m%dT%H%M%S')
+    
+    if pub_time > one_hour_ago:
+        score = float(article.get('overall_sentiment_score', 0))
+        
+        # Conflict Detection (Logic Check)
+        if prediction == "Strong Buy" and score < -0.35:
+            send_sns_alert(f"Trend Reversal! Market crashing due to: {article['title']}")
+```
+# Interpretation of Results
+The system outputs data in two formats, which I interpret as follows:
+
+## 1. The JSON Prediction
+Every morning, the Daily Lambda outputs a status object.
+```
+JSON
+
+{
+  "date": "2025-12-14",
+  "prediction": "Strong Buy",
+  "details": {
+    "score": 2,
+    "rsi": 45.5,
+    "close": 592.50
+  }
+}
+```
+
+**Interpretation**: An RSI of 45.5 is neutral, but the positive score (2) indicates that the MACD and Trend indicators have aligned. The system is advising a long position.
+
+## 2. The Alert (SNS)
+If the Hourly Lambda triggers, I receive an email notification:
+
+**Subject**: ⚠️ Stock Alert: SPY Message: 🚨 NEWS ALERT: SPY Sentiment Spike! Sentiment: BEARISH (Score: -0.65) Headline: "Tech Sector Sell-off Accelerates"
+
+**Interpretation**: This is a Contrarian Signal. Even though the morning math said "Buy", the live reality is "Bearish". This interprets as an immediate "Exit/Stop-Loss" signal to protect capital.
+
+*I declare that the KPI definitions and the refinements of the python codes were done by Gemini.*
