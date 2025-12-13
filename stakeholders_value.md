@@ -60,7 +60,7 @@ Alex receives an email on his phone:
 
 *🚨 ALERT: Trend Reversal! Your model predicted 'Strong Buy', but breaking news is Bearish (-0.8). Headline: Fed Announces Surprise Rate Hike.*
 
-## Result: Alex sees the notification on his phone during his meeting, quickly opens his trading app, and sells his position before the price crashes further. The system saved him from a major loss.
+**Result**: Alex sees the notification on his phone during his meeting, quickly opens his trading app, and sells his position before the price crashes further. The system saved him from a major loss.
 
 # Scalability and further possibilites
 This project establishes a robust "MVP" (Minimum Viable Product) using a Data Lake architecture (S3). However, to scale for high-frequency trading (HFT) or petabyte-scale data analysis, the architecture can evolve by reintegrating database solutions like DynamoDB and Redshift.
