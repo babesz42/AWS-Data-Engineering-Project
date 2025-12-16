@@ -1,0 +1,193 @@
+import json
+import boto3
+import urllib3
+import os
+import math
+from datetime import datetime
+
+# --- CONFIGURATION ---
+API_KEY = os.environ.get('ALPHAVANTAGE_KEY')
+BUCKET_NAME = os.environ.get('BUCKET_NAME')
+SYMBOL = os.environ.get('SYMBOL')
+
+s3 = boto3.client('s3')
+http = urllib3.PoolManager()
+
+# --- HELPER MATH FUNCTIONS ---
+def calculate_mean(data):
+    if not data: return 0.0
+    return sum(data) / len(data)
+
+def calculate_std_dev(data, mean):
+    if len(data) < 2: return 0.0
+    variance = sum((x - mean) ** 2 for x in data) / len(data)
+    return math.sqrt(variance)
+
+def calculate_ema(current_price, previous_ema, span):
+    multiplier = 2 / (span + 1)
+    return (current_price - previous_ema) * multiplier + previous_ema
+
+def calculate_rsi(prices, period=14):
+    if len(prices) < period + 1: return 50.0 # Not enough data
+    
+    gains, losses = [], []
+    # Calculate initial changes
+    for i in range(1, period + 1):
+        change = prices[i] - prices[i-1]
+        if change >= 0:
+            gains.append(change)
+            losses.append(0.0)
+        else:
+            gains.append(0.0)
+            losses.append(abs(change))
+            
+    avg_gain = calculate_mean(gains)
+    avg_loss = calculate_mean(losses)
+    
+    if avg_loss == 0: return 100.0
+    rs = avg_gain / avg_loss
+    
+    # Smooth the rest
+    for i in range(period + 1, len(prices)):
+        change = prices[i] - prices[i-1]
+        gain = change if change > 0 else 0.0
+        loss = abs(change) if change < 0 else 0.0
+        
+        avg_gain = (avg_gain * (period - 1) + gain) / period
+        avg_loss = (avg_loss * (period - 1) + loss) / period
+        
+    if avg_loss == 0: return 100.0
+    rs = avg_gain / avg_loss
+    return 100 - (100 / (1 + rs))
+
+# --- MAIN HANDLER ---
+def lambda_handler(event, context):
+    print(f"--- Starting Dependency-Free Analysis for {SYMBOL} ---")
+    
+    # 1. FETCH DATA (Alpha Vantage)
+    # We use 'compact' to get last 100 days (enough for math)
+    url = f"https://www.alphavantage.co/query?function=TIME_SERIES_DAILY&symbol={SYMBOL}&apikey={API_KEY}&outputsize=compact"
+    
+    try:
+        response = http.request('GET', url)
+        raw_data = json.loads(response.data.decode('utf-8'))
+        
+        if "Time Series (Daily)" not in raw_data:
+            print("Error: API limit reached or invalid data.")
+            return {"statusCode": 500, "body": "API Error"}
+            
+        daily_series = raw_data["Time Series (Daily)"]
+        
+        # Parse into a clean list of dicts: [{'date': '2023...', 'close': 100.5}, ...]
+        # We assume the API returns newest first, so we reverse it to be chronological
+        dates = sorted(daily_series.keys())
+        history = []
+        for d in dates:
+            history.append({
+                'date': d,
+                'close': float(daily_series[d]['4. close']),
+                'high': float(daily_series[d]['2. high']),
+                'low': float(daily_series[d]['3. low'])
+            })
+            
+    except Exception as e:
+        print(f"Data Fetch Error: {e}")
+        return {"statusCode": 500, "body": str(e)}
+
+    # 2. CALCULATE INDICATORS
+    # We need lists of prices for math
+    closes = [day['close'] for day in history]
+    
+    # A. MACD (12, 26, 9)
+    # Convert list to EMAs. We need at least 26 days.
+    if len(closes) < 26: return {"statusCode": 200, "body": "Not enough data"}
+    
+    # Seed EMAs with SMA of first value
+    ema12 = closes[0] 
+    ema26 = closes[0]
+    macd_line = []
+    
+    for i in range(len(closes)):
+        ema12 = calculate_ema(closes[i], ema12, 12)
+        ema26 = calculate_ema(closes[i], ema26, 26)
+        macd_line.append(ema12 - ema26)
+        
+    # Signal Line (9-day EMA of MACD Line)
+    signal_line = macd_line[0]
+    macd_signal = 0 # 1=Buy, -1=Sell
+    
+    for i in range(len(macd_line)):
+        prev_signal = signal_line
+        signal_line = calculate_ema(macd_line[i], signal_line, 9)
+        
+        # Check Crossover on the LAST day
+        if i == len(macd_line) - 1:
+            if macd_line[i] > signal_line and macd_line[i-1] <= prev_signal:
+                macd_signal = 1
+            elif macd_line[i] < signal_line and macd_line[i-1] >= prev_signal:
+                macd_signal = -1
+
+    # B. RSI (14)
+    current_rsi = calculate_rsi(closes)
+    rsi_signal = 0
+    if current_rsi < 30: rsi_signal = 1    # Oversold -> Buy
+    elif current_rsi > 70: rsi_signal = -1 # Overbought -> Sell
+    
+    # C. Bollinger Bands (20, 2)
+    # Simple calculation on the last 20 days
+    last_20 = closes[-20:]
+    sma20 = calculate_mean(last_20)
+    std20 = calculate_std_dev(last_20, sma20)
+    upper_band = sma20 + (2 * std20)
+    lower_band = sma20 - (2 * std20)
+    current_price = closes[-1]
+    
+    bb_signal = 0
+    if current_price < lower_band: bb_signal = 1
+    elif current_price > upper_band: bb_signal = -1
+
+    # D. Trend Proxy (Price vs 50-day SMA) - Replaces VWAP
+    # If price is above 50-day avg, trend is UP (Bullish)
+    last_50 = closes[-50:]
+    sma50 = calculate_mean(last_50)
+    trend_signal = 0
+    if current_price > sma50: trend_signal = 1
+    elif current_price < sma50: trend_signal = -1
+
+    # 3. FINAL DECISION
+    # Sum the signals: MACD + RSI + BB + Trend
+    total_score = macd_signal + rsi_signal + bb_signal + trend_signal
+    
+    if total_score >= 2: suggestion = "Strong Buy"
+    elif total_score == 1: suggestion = "Buy"
+    elif total_score == 0: suggestion = "Hold"
+    elif total_score == -1: suggestion = "Sell"
+    else: suggestion = "Strong Sell"
+    
+    print(f"Analysis: RSI={current_rsi:.2f}, MACD_Sig={macd_signal}, Score={total_score} -> {suggestion}")
+
+    # 4. SAVE TO S3
+    result_json = {
+        "date": datetime.now().strftime('%Y-%m-%d'),
+        "prediction": suggestion,
+        "details": {
+            "score": total_score,
+            "rsi": round(current_rsi, 2),
+            "close": current_price
+        }
+    }
+    
+    try:
+        s3.put_object(
+            Bucket=BUCKET_NAME,
+            Key="daily_updates/prediction.json",
+            Body=json.dumps(result_json)
+        )
+        print("Saved prediction to S3.")
+    except Exception as e:
+        print(f"S3 Save Error: {e}")
+
+    return {
+        'statusCode': 200,
+        'body': json.dumps(result_json)
+    }

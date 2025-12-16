@@ -1,0 +1,48 @@
+import json
+import boto3
+import urllib3
+import os
+
+# --- CONFIGURATION ---
+API_KEY = os.environ.get('ALPHAVANTAGE_KEY')
+BUCKET_NAME = os.environ.get('BUCKET_NAME')
+SYMBOL = os.environ.get('SYMBOL', 'SPY')
+
+s3 = boto3.client('s3')
+http = urllib3.PoolManager()
+
+def lambda_handler(event, context):
+    print(f"--- STARTING HISTORICAL BACKFILL FOR {SYMBOL} ---")
+    
+    # 1. FETCH FULL HISTORY (20+ Years)
+    # We change 'outputsize' to 'full'
+    url = f"https://www.alphavantage.co/query?function=TIME_SERIES_DAILY&symbol={SYMBOL}&apikey={API_KEY}&outputsize=5y"
+    
+    try:
+        print("Fetching full history from API (this may take 10s)...")
+        response = http.request('GET', url)
+        raw_data = json.loads(response.data.decode('utf-8'))
+        
+        if "Time Series (Daily)" not in raw_data:
+            print("Error: API limit reached or invalid data.")
+            return {"statusCode": 500, "body": "API Error"}
+            
+        print("Data received. Saving to S3...")
+        
+        # 2. SAVE RAW HISTORY TO S3
+        # We save this as the "Master" file
+        s3.put_object(
+            Bucket=BUCKET_NAME,
+            Key="initial_upload/initial_history_full.json",
+            Body=json.dumps(raw_data)
+        )
+        print("SUCCESS: Saved 5 years of data to 'initial_upload/initial_history_full.json'")
+            
+    except Exception as e:
+        print(f"Data Fetch Error: {e}")
+        return {"statusCode": 500, "body": str(e)}
+
+    return {
+        'statusCode': 200,
+        'body': "Backfill Complete"
+    }
